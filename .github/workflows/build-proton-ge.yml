@@ -1,0 +1,91 @@
+name: Build and Release Proton-GE
+
+on:
+  workflow_dispatch: # Allows manual triggering of the workflow
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up variables
+        id: vars
+        run: |
+          echo "::set-output name=release_url::https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest"
+
+      - name: Get latest release info
+        id: get_release
+        run: |
+          RELEASE_INFO=$(curl -s ${{ steps.vars.outputs.release_url }})
+          echo "::set-output name=asset_name::$(echo $RELEASE_INFO | jq -r '.assets[] | select(.name | test("\\.tar\\.gz$") and .name | contains("source") | not ) | .name')"
+          echo "::set-output name=asset_url::$(echo $RELEASE_INFO | jq -r '.assets[] | select(.name | test("\\.tar\\.gz$") and .name | contains("source") | not ) | .browser_download_url')"
+          
+      - name: Download Release Asset
+        id: download_asset
+        run: |
+          echo "Downloading ${{ steps.get_release.outputs.asset_name }}"
+          curl -L ${{ steps.get_release.outputs.asset_url }} -o ${{ steps.get_release.outputs.asset_name }}
+
+      - name: Extract Release
+        id: extract_release
+        run: |
+          asset_name="${{ steps.get_release.outputs.asset_name }}"
+          proton_folder=$(echo "$asset_name" | sed 's/\.tar\.gz$//')
+          echo "Extracting to $proton_folder"
+          tar -xzf "$asset_name"
+          echo "::set-output name=proton_folder::$proton_folder"
+
+
+      - name: Build Squashfs Image
+        id: build_squashfs
+        run: |
+          proton="${{ steps.extract_release.outputs.proton_folder }}"
+          tools_path="${{ github.workspace }}/tools"
+          "$tools_path"/mksquashfs "$proton" "$proton.sqsh" -b 1048576 -comp xz -Xdict-size 100%
+
+      - name: Build Dwarfs
+        id: build_dwarfs
+        run: |
+          proton="${{ steps.extract_release.outputs.proton_folder }}"
+          tools_path="${{ github.workspace }}/tools"
+          "$tools_path"/mkdwarfs -l 9 -S24 -W12 -w4 -B64 -N4 -i "$proton" -o "$proton.dwarf"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: proton-artifacts
+          path: |
+            ${{ steps.extract_release.outputs.proton_folder }}.sqsh
+            ${{ steps.extract_release.outputs.proton_folder }}.dwarf
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.extract_release.outputs.proton_folder }}
+          release_name: ${{ steps.extract_release.outputs.proton_folder }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ steps.extract_release.outputs.proton_folder }}.sqsh
+          asset_name: ${{ steps.extract_release.outputs.proton_folder }}.sqsh
+          asset_content_type: application/octet-stream
+      - name: Upload Release Assets 2
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ steps.extract_release.outputs.proton_folder }}.dwarf
+          asset_name: ${{ steps.extract_release.outputs.proton_folder }}.dwarf
+          asset_content_type: application/octet-stream
