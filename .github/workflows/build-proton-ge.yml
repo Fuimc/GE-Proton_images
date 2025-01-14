@@ -67,9 +67,10 @@ jobs:
             ${{ steps.packaging.outputs.dwarf_path }}
 
       - name: Create GitHub Release
+        id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB_TOKEN }} # Changed this
         with:
           tag_name: latest
           release_name: Latest Proton-GE Package
@@ -81,7 +82,7 @@ jobs:
       - name: Upload Release Assets
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB_TOKEN }} # Changed this
         with:
             upload_url: ${{ steps.create_release.outputs.upload_url }}
             asset_path: ${{ steps.packaging.outputs.sqsh_path }}
@@ -90,7 +91,7 @@ jobs:
       - name: Upload Release Assets 2
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB_TOKEN }} # Changed this
         with:
             upload_url: ${{ steps.create_release.outputs.upload_url }}
             asset_path: ${{ steps.packaging.outputs.dwarf_path }}
