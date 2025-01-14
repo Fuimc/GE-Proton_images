@@ -54,26 +54,20 @@ jobs:
 
           echo "Creating dwarf file $PROTON_DWARF from $PROTON_DIR"
           ./tools/mkdwarfs -l 9 -S24 -W12 -w4 -B64 -N4 -i "$PROTON_DIR" -o "$PROTON_DWARF"
-
+          
+          echo "::set-output name=proton_version::$PROTON_DIR"
           echo "::set-output name=sqsh_path::$PROTON_SQSH"
           echo "::set-output name=dwarf_path::$PROTON_DWARF"
-          
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: proton-files
-          path: |
-            ${{ steps.packaging.outputs.sqsh_path }}
-            ${{ steps.packaging.outputs.dwarf_path }}
+
 
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB_TOKEN }} # Changed this
+          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB_TOKEN }}
         with:
-          tag_name: latest
-          release_name: Latest Proton-GE Package
+          tag_name: ${{ steps.packaging.outputs.proton_version }} # dynamic tag
+          release_name: "${{ steps.packaging.outputs.proton_version }} Package" # dynamic name
           body: |
             This is the latest packaged release of Proton-GE.
           draft: false
@@ -82,7 +76,7 @@ jobs:
       - name: Upload Release Assets
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB_TOKEN }} # Changed this
+          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB_TOKEN }}
         with:
             upload_url: ${{ steps.create_release.outputs.upload_url }}
             asset_path: ${{ steps.packaging.outputs.sqsh_path }}
@@ -91,7 +85,7 @@ jobs:
       - name: Upload Release Assets 2
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB_TOKEN }} # Changed this
+          GITHUB_TOKEN: ${{ secrets.PAT_GITHUB_TOKEN }}
         with:
             upload_url: ${{ steps.create_release.outputs.upload_url }}
             asset_path: ${{ steps.packaging.outputs.dwarf_path }}
