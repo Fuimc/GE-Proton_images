@@ -1,101 +1,98 @@
-name: Build and Release Proton-GE
+name: Download, Squash, and Package Proton-GE
 
 on:
-  workflow_dispatch: # Allows manual triggering of the workflow
+  workflow_dispatch:
 
 jobs:
-  build-and-release:
+  build-proton:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Set up variables
-        id: vars
+      - name: Get Latest Release URL
+        id: get_release_url
         run: |
-          echo "::set-output name=release_url::https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest"
+          LATEST_RELEASE_URL=$(curl -s https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest |
+                              jq -r '.assets[] | select(.name | endswith(".tar.gz")) | select(.name | contains("Source code") | not ) | .browser_download_url')
+          echo "::set-output name=url::$LATEST_RELEASE_URL"
 
-      - name: Get latest release info
-        id: get_release
+      - name: Download Release
+        id: download_release
         run: |
-          RELEASE_INFO=$(curl -s ${{ steps.vars.outputs.release_url }})
-          echo "::set-output name=asset_name::$(echo $RELEASE_INFO | jq -r '.assets[] | select(.name | test("\\.tar\\.gz$") and .name | contains("source") | not ) | .name')"
-          echo "::set-output name=asset_url::$(echo $RELEASE_INFO | jq -r '.assets[] | select(.name | test("\\.tar\\.gz$") and .name | contains("source") | not ) | .browser_download_url')"
+          RELEASE_URL="${{ steps.get_release_url.outputs.url }}"
+          RELEASE_FILENAME=$(basename "$RELEASE_URL")
+          echo "Downloading $RELEASE_FILENAME from $RELEASE_URL"
+          curl -L "$RELEASE_URL" -o "$RELEASE_FILENAME"
+          echo "::set-output name=filename::$RELEASE_FILENAME"
 
-      - name: Download Release Asset
-        id: download_asset
-        run: |
-          asset_name="${{ steps.get_release.outputs.asset_name }}"
-          asset_url="${{ steps.get_release.outputs.asset_url }}"
-          if [[ -z "$asset_name" ]]; then
-             echo "No matching asset found!"
-             exit 1
-          fi
-          echo "Downloading $asset_name"
-          wget "$asset_url" -O "$asset_name"
-          if [[ $? -ne 0 ]]; then
-            echo "Download failed!"
-            exit 1
-          fi
 
       - name: Extract Release
         id: extract_release
         run: |
-          asset_name="${{ steps.get_release.outputs.asset_name }}"
-          proton_folder=$(echo "$asset_name" | sed 's/\.tar\.gz$//')
-          echo "Extracting to $proton_folder"
-          tar -xzf "$asset_name"
-          echo "::set-output name=proton_folder::$proton_folder"
-
-
-      - name: Build Squashfs Image
-        id: build_squashfs
+          RELEASE_FILENAME="${{ steps.download_release.outputs.filename }}"
+          EXTRACT_DIR=$(echo "$RELEASE_FILENAME" | sed 's/\.tar\.gz$//') #remove the .tar.gz
+          mkdir "$EXTRACT_DIR"
+          tar -xzf "$RELEASE_FILENAME" -C "$EXTRACT_DIR"
+          echo "::set-output name=extracted_dir::$EXTRACT_DIR"
+      - name: Set Permissions for tools
         run: |
-          proton="${{ steps.extract_release.outputs.proton_folder }}"
-          tools_path="${{ github.workspace }}/tools"
-          "$tools_path"/mksquashfs "$proton" "$proton.sqsh" -b 1048576 -comp xz -Xdict-size 100%
+          chmod +x ./tools/mksquashfs
+          chmod +x ./tools/mkdwarfs
 
-      - name: Build Dwarfs
-        id: build_dwarfs
+
+      - name: SquashFS and Dwarf Packaging
+        id: packaging
         run: |
-          proton="${{ steps.extract_release.outputs.proton_folder }}"
-          tools_path="${{ github.workspace }}/tools"
-          "$tools_path"/mkdwarfs -l 9 -S24 -W12 -w4 -B64 -N4 -i "$proton" -o "$proton.dwarf"
+          PROTON_DIR="${{ steps.extract_release.outputs.extracted_dir }}"
+          PROTON_SQSH="$PROTON_DIR.sqsh"
+          PROTON_DWARF="$PROTON_DIR.dwarf"
 
+          echo "Squashing $PROTON_DIR to $PROTON_SQSH"
+          ./tools/mksquashfs "$PROTON_DIR" "$PROTON_SQSH" -b 1048576 -comp xz -Xdict-size 100%
+
+          echo "Creating dwarf file $PROTON_DWARF from $PROTON_DIR"
+          ./tools/mkdwarfs -l 9 -S24 -W12 -w4 -B64 -N4 -i "$PROTON_DIR" -o "$PROTON_DWARF"
+
+          echo "::set-output name=sqsh_path::$PROTON_SQSH"
+          echo "::set-output name=dwarf_path::$PROTON_DWARF"
+          
       - name: Upload Artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: proton-artifacts
+          name: proton-files
           path: |
-            ${{ steps.extract_release.outputs.proton_folder }}.sqsh
-            ${{ steps.extract_release.outputs.proton_folder }}.dwarf
+            ${{ steps.packaging.outputs.sqsh_path }}
+            ${{ steps.packaging.outputs.dwarf_path }}
 
-      - name: Create Release
-        id: create_release
+      - name: Create GitHub Release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.extract_release.outputs.proton_folder }}
-          release_name: ${{ steps.extract_release.outputs.proton_folder }}
+          tag_name: latest
+          release_name: Latest Proton-GE Package
+          body: |
+            This is the latest packaged release of Proton-GE.
           draft: false
           prerelease: false
-
+          
       - name: Upload Release Assets
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.extract_release.outputs.proton_folder }}.sqsh
-          asset_name: ${{ steps.extract_release.outputs.proton_folder }}.sqsh
-          asset_content_type: application/octet-stream
+            upload_url: ${{ steps.create_release.outputs.upload_url }}
+            asset_path: ${{ steps.packaging.outputs.sqsh_path }}
+            asset_name: ${{ steps.packaging.outputs.sqsh_path }}
+            asset_content_type: application/octet-stream
       - name: Upload Release Assets 2
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.extract_release.outputs.proton_folder }}.dwarf
-          asset_name: ${{ steps.extract_release.outputs.proton_folder }}.dwarf
-          asset_content_type: application/octet-stream
+            upload_url: ${{ steps.create_release.outputs.upload_url }}
+            asset_path: ${{ steps.packaging.outputs.dwarf_path }}
+            asset_name: ${{ steps.packaging.outputs.dwarf_path }}
+            asset_content_type: application/octet-stream
