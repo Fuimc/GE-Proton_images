@@ -21,12 +21,22 @@ jobs:
           RELEASE_INFO=$(curl -s ${{ steps.vars.outputs.release_url }})
           echo "::set-output name=asset_name::$(echo $RELEASE_INFO | jq -r '.assets[] | select(.name | test("\\.tar\\.gz$") and .name | contains("source") | not ) | .name')"
           echo "::set-output name=asset_url::$(echo $RELEASE_INFO | jq -r '.assets[] | select(.name | test("\\.tar\\.gz$") and .name | contains("source") | not ) | .browser_download_url')"
-          
+
       - name: Download Release Asset
         id: download_asset
         run: |
-          echo "Downloading ${{ steps.get_release.outputs.asset_name }}"
-          curl -L ${{ steps.get_release.outputs.asset_url }} -o ${{ steps.get_release.outputs.asset_name }}
+          asset_name="${{ steps.get_release.outputs.asset_name }}"
+          asset_url="${{ steps.get_release.outputs.asset_url }}"
+          if [[ -z "$asset_name" ]]; then
+             echo "No matching asset found!"
+             exit 1
+          fi
+          echo "Downloading $asset_name"
+          wget "$asset_url" -O "$asset_name"
+          if [[ $? -ne 0 ]]; then
+            echo "Download failed!"
+            exit 1
+          fi
 
       - name: Extract Release
         id: extract_release
