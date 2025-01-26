@@ -3,6 +3,7 @@ name: Download, Squash, and Package Proton-GE
 on:
   workflow_dispatch:
   repository_dispatch:
+      types: [update]
   
 jobs:
   build-proton:
