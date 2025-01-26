@@ -48,15 +48,15 @@ jobs:
         id: packaging
         run: |
           PROTON_DIR="${{ steps.extract_release.outputs.extracted_dir }}"
-          PROTON_DIR="$PROTON_DIR/$PROTON_DIR"
+          PROTON_DIR2="$PROTON_DIR/$PROTON_DIR"
           PROTON_SQSH="$PROTON_DIR.sqsh"
           PROTON_DWARF="$PROTON_DIR.dwarf"
 
           echo "Squashing $PROTON_DIR to $PROTON_SQSH"
-          ./tools/mksquashfs "$PROTON_DIR" "$PROTON_SQSH" -b 1048576 -comp xz -Xdict-size 100%
+          ./tools/mksquashfs "$PROTON_DIR2" "$PROTON_SQSH" -b 1048576 -comp xz -Xdict-size 100%
 
           echo "Creating dwarf file $PROTON_DWARF from $PROTON_DIR"
-          ./tools/mkdwarfs -l 9 -S24 -W12 -w4 -B64 -N4 -i "$PROTON_DIR" -o "$PROTON_DWARF"
+          ./tools/mkdwarfs -l 9 -S24 -W12 -w4 -B64 -N4 -i "$PROTON_DIR2" -o "$PROTON_DWARF"
           
           echo "::set-output name=proton_version::$PROTON_DIR"
           echo "::set-output name=sqsh_path::$PROTON_SQSH"
