@@ -46,6 +46,7 @@ jobs:
         id: packaging
         run: |
           PROTON_DIR="${{ steps.extract_release.outputs.extracted_dir }}"
+          PROTON_DIR="$PROTON_DIR/$PROTON_DIR"
           PROTON_SQSH="$PROTON_DIR.sqsh"
           PROTON_DWARF="$PROTON_DIR.dwarf"
 
